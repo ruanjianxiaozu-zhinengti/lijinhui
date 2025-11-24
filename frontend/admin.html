@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>管理后台 - 多轮问答系统</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="admin-app">
+    <!-- 顶部导航 -->
+    <div class="chat-header">
+      <div class="session-info">
+        <h2>系统管理后台</h2>
+        <div class="meta">管理员: {{ currentUser.account }}</div>
+      </div>
+
+      <div class="chat-actions">
+        <button class="btn btn-outline" @click="goBack">
+          <i class="fas fa-arrow-left"></i> 返回聊天
+        </button>
+        <button class="btn btn-outline" @click="refreshData">
+          <i class="fas fa-refresh"></i> 刷新
+        </button>
+        <button class="btn btn-outline" @click="logout">
+          <i class="fas fa-sign-out-alt"></i> 退出
+        </button>
+      </div>
+    </div>
+
+    <div class="admin-container">
+      <!-- 统计信息 -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">总用户数</div>
+          <div class="stat-number">{{ stats.total_users || 0 }}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">总对话数</div>
+          <div class="stat-number">{{ stats.total_chats || 0 }}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">活跃用户</div>
+          <div class="stat-number">{{ userStats.length }}</div>
+        </div>
+      </div>
+
+      <!-- 用户管理 -->
+      <div>
+        <h3 style="margin-bottom: 20px;">用户管理</h3>
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>账号</th>
+                <th>角色</th>
+                <th>注册时间</th>
+                <th>对话数量</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="user in users" :key="user.id">
+                <td>{{ user.id }}</td>
+                <td>{{ user.account }}</td>
+                <td>
+                  <span :class="{'badge': true, 'badge-admin': user.is_admin, 'badge-user': !user.is_admin}">
+                    {{ user.is_admin ? '管理员' : '普通用户' }}
+                  </span>
+                </td>
+                <td>{{ formatDate(user.created_at) }}</td>
+                <td>{{ getUserChatCount(user.id) }}</td>
+                <td class="actions">
+                  <button
+                    class="btn btn-danger btn-sm"
+                    @click="deleteUser(user.id)"
+                    :disabled="user.id === currentUser.id"
+                  >
+                    <i class="fas fa-trash"></i> 删除
+                  </button>
+                  <button
+                    class="btn btn-outline btn-sm"
+                    @click="clearUserChat(user.id)"
+                  >
+                    <i class="fas fa-eraser"></i> 清空对话
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 用户统计 -->
+      <div style="margin-top: 40px;">
+        <h3 style="margin-bottom: 20px;">用户对话统计</h3>
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>账号</th>
+                <th>对话数量</th>
+                <th>活跃度</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="stat in userStats" :key="stat.account">
+                <td>{{ stat.account }}</td>
+                <td>{{ stat.chat_count }}</td>
+                <td>
+                  <div class="progress-bar">
+                    <div
+                      class="progress-fill"
+                      :style="{ width: getProgressWidth(stat.chat_count) }"
+                    ></div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>

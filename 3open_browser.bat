@@ -1,0 +1,3 @@
+@echo off
+echo 打开系统...
+start http://localhost:8000

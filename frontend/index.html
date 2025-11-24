@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>基于智能体的多轮问答系统</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- 侧边栏 -->
+    <div class="sidebar" :class="{ open: sidebarOpen }">
+      <div class="sidebar-header">
+        <h1>多轮问答系统</h1>
+        <p style="font-size: 12px; color: var(--info-color); margin-top: 5px;">信息安全领域</p>
+      </div>
+
+      <div class="user-info">
+        <div class="user-avatar">
+          {{ userInitials }}
+        </div>
+        <div>
+          <div style="font-weight: bold;">{{ currentUser.account || '未登录' }}</div>
+          <div style="font-size: 12px; color: var(--info-color);">
+            {{ currentUser.is_admin ? '管理员' : '普通用户' }}
+          </div>
+        </div>
+      </div>
+
+<div class="session-list">
+  <div class="session-header">
+    <h3>会话列表</h3>
+    <button class="btn btn-sm btn-outline" @click="loadConversations">
+      <i class="fas fa-refresh"></i>
+    </button>
+  </div>
+
+  <!-- 当前会话始终显示 -->
+  <div class="session-item"
+       :class="{ active: !currentConversationDate }"
+       @click="newSession">
+    <div class="session-avatar">
+      <i class="fas fa-comment"></i>
+    </div>
+    <div class="session-main">
+      <div class="session-title">当前会话</div>
+      <div class="session-preview">与AI助手对话中...</div>
+    </div>
+  </div>
+
+  <!-- 历史会话列表 -->
+  <div v-for="conversation in conversations"
+       :key="conversation.id"
+       class="session-item"
+       :class="{ active: currentConversationDate === conversation.date }"
+       @click="selectConversation(conversation)">
+
+    <div class="session-avatar">
+      <i class="fas fa-comments"></i>
+    </div>
+
+    <div class="session-main">
+      <div class="session-title">会话 {{ formatSessionIndex(conversation.id) }}</div>
+      <div class="session-preview">{{ conversation.preview || '信息安全咨询' }}</div>
+      <div class="session-meta">
+        <span class="session-count">{{ conversation.count }} 条消息</span>
+        <span class="session-time">{{ formatRelativeTime(conversation.last_time) }}</span>
+      </div>
+    </div>
+
+    <div class="session-actions">
+      <button class="btn-icon" @click.stop="exportConversation(conversation)"
+              title="导出对话">
+        <i class="fas fa-download"></i>
+      </button>
+      <button class="btn-icon btn-danger" @click.stop="deleteConversation(conversation)"
+              title="删除对话">
+        <i class="fas fa-trash"></i>
+      </button>
+    </div>
+  </div>
+
+  <div v-if="conversations.length === 0" class="empty-state">
+    <i class="fas fa-comments"></i>
+    <p>暂无历史会话</p>
+  </div>
+</div>
+      <!-- 修复：正确闭合的sidebar-footer -->
+      <div class="sidebar-footer">
+  <button class="btn btn-primary" @click="newSession">
+    <i class="fas fa-plus"></i> 新建对话
+  </button>
+  <button class="btn btn-outline" @click="clearChat">
+    <i class="fas fa-trash"></i> 清空当前对话
+  </button>
+  <button v-if="currentUser.is_admin" class="btn btn-outline" @click="goToAdmin">
+    <i class="fas fa-cog"></i> 管理后台
+  </button>
+  <button class="btn btn-outline" @click="logout">
+    <i class="fas fa-sign-out-alt"></i> 退出
+  </button>
+</div>
+    </div> <!-- 闭合sidebar -->
+
+    <!-- 主内容区 -->
+    <div class="main-content">
+      <div class="chat-header">
+        <div class="session-info">
+          <h2>当前会话</h2>
+          <div class="meta">用户: {{ currentUser.account || '未登录' }}</div>
+        </div>
+
+        <div class="chat-actions">
+          <button class="btn btn-outline" @click="showHistory = !showHistory">
+            <i class="fas fa-history"></i> {{ showHistory ? '隐藏历史' : '查看历史' }}
+          </button>
+          <button class="mobile-menu-btn" @click="toggleSidebar">
+            <i class="fas fa-bars"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="chat-container" ref="chatContainer">
+        <!-- 历史记录面板 -->
+        <div v-if="showHistory" class="history-panel">
+          <div class="history-header">
+            <h3>对话历史</h3>
+            <button class="btn btn-outline btn-sm" @click="loadHistory">
+              <i class="fas fa-refresh"></i> 刷新
+            </button>
+          </div>
+          <div class="history-list">
+            <div v-for="record in history" :key="record.id" class="history-item">
+              <div class="history-time">{{ formatTime(record.create_time) }}</div>
+              <div class="history-query" v-if="record.query">
+                <strong>问:</strong> {{ record.query }}
+              </div>
+              <div class="history-response">
+                <strong>答:</strong> {{ record.response }}
+              </div>
+              <div v-if="record.file_path" class="history-file">
+                <i class="fas fa-file"></i> 附件: {{ record.file_path }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 聊天消息 -->
+        <div v-for="(msg, idx) in messages" :key="idx" class="message" :class="msg.role">
+          <div class="message-avatar">
+            {{ msg.role === 'user' ? userInitials : 'AI' }}
+          </div>
+          <div class="message-content">
+            <div>{{ msg.text }}</div>
+            <div class="message-time">{{ formatTime(msg.timestamp) }}</div>
+          </div>
+        </div>
+
+        <div v-if="loading" class="message system">
+          <div class="message-avatar">AI</div>
+          <div class="message-content">
+            <div class="loading">思考中...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="input-area">
+        <div class="upload-area">
+          <i class="fas fa-file-upload"></i>
+          <div class="upload-text">支持上传 TXT、PDF、PNG、JPG 格式文件</div>
+          <input type="file" ref="fileInput" @change="handleFileUpload" style="display: none"
+                 accept=".txt,.pdf,.png,.jpg,.jpeg">
+          <button class="upload-btn" @click="$refs.fileInput.click()">上传文件</button>
+        </div>
+
+        <div class="input-row">
+          <input
+            v-model="input"
+            @keyup.enter="sendMessage"
+            class="input-field"
+            placeholder="请输入问题..."
+            :disabled="loading"
+          />
+          <button class="btn btn-primary" @click="sendMessage" :disabled="loading">
+            <i class="fas fa-paper-plane"></i> 发送
+          </button>
+        </div>
+      </div>
+    </div> <!-- 闭合main-content -->
+
+    <!-- 登录模态框 -->
+    <div class="modal-overlay" v-if="showLoginModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h2>用户登录</h2>
+        </div>
+        <div class="modal-body">
+          <div class="tabs">
+            <div class="tab" :class="{ active: loginTab === 'login' }" @click="loginTab = 'login'">登录</div>
+            <div class="tab" :class="{ active: loginTab === 'register' }" @click="loginTab = 'register'">注册</div>
+          </div>
+
+          <div v-if="loginTab === 'login'">
+            <div class="form-group">
+              <label class="form-label">账号（纯数字）</label>
+              <input type="text" class="form-control" v-model="loginForm.account" placeholder="请输入数字账号">
+            </div>
+            <div class="form-group">
+              <label class="form-label">密码</label>
+              <input type="password" class="form-control" v-model="loginForm.password">
+            </div>
+          </div>
+
+          <div v-if="loginTab === 'register'">
+            <div class="form-group">
+              <label class="form-label">账号（纯数字，长度&lt;20）</label>
+              <input type="text" class="form-control" v-model="registerForm.account" placeholder="请输入数字账号">
+            </div>
+            <div class="form-group">
+              <label class="form-label">密码</label>
+              <input type="password" class="form-control" v-model="registerForm.password">
+            </div>
+            <div class="form-group">
+              <label class="form-label">确认密码</label>
+              <input type="password" class="form-control" v-model="registerForm.confirmPassword">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="showLoginModal = false" v-if="currentUser.id">取消</button>
+          <button class="btn btn-primary" @click="loginTab === 'login' ? login() : register()" :disabled="loading">
+            {{ loginTab === 'login' ? '登录' : '注册' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div> <!-- 闭合#app -->
+
+  <!-- 直接引入所有JS文件，不使用模块 -->
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

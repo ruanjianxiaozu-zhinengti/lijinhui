@@ -1,0 +1,36 @@
+project/
+├── backend/
+│   ├── app.py              # Flask后端主文件
+│   ├── config.py           # 配置文件
+│   ├── dify_chat_system.py # 数据库初始化文件
+│   ├── requirements.txt    # Python依赖
+│   └── static/
+│       └── uploads/        # 文件上传目录
+├── database/
+│   └── dify_chat_system.py # 数据库文件
+└── frontend/
+    ├── index.html          # 主页面
+    ├── admin.html          # 管理后台
+    ├── css/
+    │   └── style.css       # 样式文件
+    ├── js/
+    │   ├── admin.js        # 管理后台逻辑
+    │   ├── api.js          # API调用
+    │   └── app.js          # 主应用逻辑
+    └── assets/             # 静态资源
+
+
+
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+
+数据库：
+pip install requests
+pip install mysql-connector-python
+
+cd database
+python dify_chat_system.py
+
+后端：cd backend
+python app.py
