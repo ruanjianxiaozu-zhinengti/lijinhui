@@ -1,13 +1,10 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
-import hashlib
-import mysql.connector
-from datetime import datetime
-from mysql.connector import Error
 import time
 import requests
 import uuid
+from database.dify_chat_system import Database
 
 app = Flask(__name__)
 CORS(app)
@@ -26,210 +23,11 @@ BASE_URL = "https://api.dify.ai/v1"
 CHAT_ENDPOINT = f"{BASE_URL}/chat-messages"
 FILE_UPLOAD_ENDPOINT = f"{BASE_URL}/files/upload"
 
-# 数据库配置 - 根据你的MySQL设置调整
-DB_CONFIG = {
-    "host": "localhost",
-    "user": "root",
-    "password": "123456",  # 你的MySQL密码
-    "database": "dify_chat"  # 确保数据库存在
-}
-
 # 网络配置
 TIMEOUT = 60
 RETRY_COUNT = 3
 RETRY_DELAY = 3
 VERIFY_SSL = False
-
-class Database:
-    def __init__(self):
-        self.conn = None
-        self.cursor = None
-        self._connect()
-        self._ensure_tables_exist()
-
-    def _connect(self):
-        try:
-            self.conn = mysql.connector.connect(**DB_CONFIG)
-            self.cursor = self.conn.cursor(dictionary=True)
-            print("✅ 数据库连接成功")
-        except Error as e:
-            print(f"❌ 数据库连接失败: {e}")
-            # 尝试创建数据库
-            self._create_database()
-
-    def _create_database(self):
-        try:
-            # 连接但不指定数据库
-            temp_config = DB_CONFIG.copy()
-            temp_config.pop('database')
-            temp_conn = mysql.connector.connect(**temp_config)
-            temp_cursor = temp_conn.cursor()
-
-            # 创建数据库
-            temp_cursor.execute(f"CREATE DATABASE IF NOT EXISTS {DB_CONFIG['database']}")
-            print(f"✅ 数据库 {DB_CONFIG['database']} 创建成功")
-
-            temp_cursor.close()
-            temp_conn.close()
-
-            # 重新连接
-            self._connect()
-        except Error as e:
-            print(f"❌ 创建数据库失败: {e}")
-            raise
-
-    def _ensure_tables_exist(self):
-        """确保表存在，如果不存在则创建"""
-        try:
-            # 检查用户表是否存在
-            self.cursor.execute("SHOW TABLES LIKE 'users'")
-            if not self.cursor.fetchone():
-                self._create_tables()
-        except Exception as e:
-            print(f"检查表存在性失败: {e}")
-            self._create_tables()
-
-    def _create_tables(self):
-        """创建数据表"""
-        try:
-            # 创建用户表
-            self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                account VARCHAR(20) UNIQUE NOT NULL,
-                password_hash VARCHAR(255) NOT NULL,
-                is_admin INT DEFAULT 0,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-            ''')
-
-            # 创建聊天记录表
-            self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS chat_records (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                user_id INT NOT NULL,
-                query TEXT,
-                response TEXT NOT NULL,
-                file_path TEXT,
-                create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-            ''')
-
-            # 创建默认管理员账号
-            self._init_admin()
-
-            self.conn.commit()
-            print("✅ 表结构创建成功")
-        except Exception as e:
-            print(f"❌ 创建表失败: {e}")
-            raise
-
-    def _init_admin(self):
-        """创建默认管理员账号666"""
-        admin_account = "666"
-        admin_password = "admin"
-
-        # 检查管理员是否已存在
-        self.cursor.execute('SELECT id FROM users WHERE account = %s', (admin_account,))
-        if not self.cursor.fetchone():
-            pwd_hash = hashlib.sha256(admin_password.encode()).hexdigest()
-            self.cursor.execute('''
-            INSERT INTO users (account, password_hash, is_admin)
-            VALUES (%s, %s, 1)
-            ''', (admin_account, pwd_hash))
-            print(f"✅ 已创建默认管理员账号: {admin_account} / 密码: {admin_password}")
-
-    def register_user(self, account, password):
-        if not account.isdigit() or len(account) >= 20:
-            return False, "账号必须是纯数字且长度<20位"
-        pwd_hash = hashlib.sha256(password.encode()).hexdigest()
-        try:
-            self.cursor.execute('''
-            INSERT IGNORE INTO users (account, password_hash, is_admin)
-            VALUES (%s, %s, 0)
-            ''', (account, pwd_hash))
-            self.conn.commit()
-            return self.cursor.rowcount > 0, "注册成功" if self.cursor.rowcount > 0 else "账号已存在"
-        except Exception as e:
-            return False, f"注册失败: {str(e)}"
-
-    def login_user(self, account, password):
-        pwd_hash = hashlib.sha256(password.encode()).hexdigest()
-        self.cursor.execute('''
-        SELECT id, account, is_admin FROM users
-        WHERE account = %s AND password_hash = %s
-        ''', (account, pwd_hash))
-        return self.cursor.fetchone()
-
-    def save_chat(self, user_id, query, response, file_path=""):
-        try:
-            self.cursor.execute('''
-            INSERT INTO chat_records (user_id, query, response, file_path)
-            VALUES (%s, %s, %s, %s)
-            ''', (user_id, query, response, file_path))
-            self.conn.commit()
-            return True
-        except Exception as e:
-            print(f"❌ 保存对话失败: {e}")
-            return False
-
-    def get_chat_history(self, user_id):
-        self.cursor.execute('''
-        SELECT id, create_time, query, response, file_path
-        FROM chat_records
-        WHERE user_id = %s
-        ORDER BY create_time DESC
-        ''', (user_id,))
-        return self.cursor.fetchall()
-
-    def get_all_users(self):
-        self.cursor.execute('''
-        SELECT id, account, is_admin, created_at 
-        FROM users 
-        ORDER BY created_at DESC
-        ''')
-        return self.cursor.fetchall()
-
-    def delete_user(self, user_id):
-        try:
-            self.cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
-            self.conn.commit()
-            return self.cursor.rowcount > 0
-        except Exception as e:
-            print(f"❌ 删除用户失败: {e}")
-            return False
-
-    def delete_user_chat(self, user_id):
-        try:
-            self.cursor.execute("DELETE FROM chat_records WHERE user_id = %s", (user_id,))
-            self.conn.commit()
-            return self.cursor.rowcount > 0
-        except Exception as e:
-            print(f"❌ 删除对话记录失败: {e}")
-            return False
-
-    def get_user_stats(self):
-        self.cursor.execute('SELECT COUNT(*) as total_users FROM users')
-        total_users = self.cursor.fetchone()['total_users']
-
-        self.cursor.execute('SELECT COUNT(*) as total_chats FROM chat_records')
-        total_chats = self.cursor.fetchone()['total_chats']
-
-        self.cursor.execute('''
-        SELECT account, COUNT(chat_records.id) as chat_count 
-        FROM users 
-        LEFT JOIN chat_records ON users.id = chat_records.user_id 
-        GROUP BY users.id 
-        ORDER BY chat_count DESC
-        ''')
-        user_stats = self.cursor.fetchall()
-
-        return {
-            'total_users': total_users,
-            'total_chats': total_chats,
-            'user_stats': user_stats
-        }
 
 class DifyClient:
     def __init__(self, api_key):
