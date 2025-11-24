@@ -82,14 +82,17 @@ class Database:
     def _init_admin(self):
         admin_account = "admin"
         admin_password = "123456"
+        pwd_hash = hashlib.sha256(admin_password.encode()).hexdigest()
+        # 如果存在则更新密码，否则插入
         self.cursor.execute('SELECT id FROM users WHERE account = %s', (admin_account,))
-        if not self.cursor.fetchone():
-            pwd_hash = hashlib.sha256(admin_password.encode()).hexdigest()
-            self.cursor.execute('''
-            INSERT INTO users (account, password_hash, is_admin)
-            VALUES (%s, %s, 1)
-            ''', (admin_account, pwd_hash))
-            print(f"✅ 已创建默认管理员账号: {admin_account} / 密码: {admin_password}")
+        if self.cursor.fetchone():
+            self.cursor.execute('UPDATE users SET password_hash = %s, is_admin = 1 WHERE account = %s',
+                                (pwd_hash, admin_account))
+        else:
+            self.cursor.execute('INSERT INTO users (account, password_hash, is_admin) VALUES (%s, %s, 1)',
+                                (admin_account, pwd_hash))
+        self.conn.commit()
+        print(f"✅ 管理员账号已设置为: {admin_account} / 密码: {admin_password}")
 
     def register_user(self, account, password):
         if not account.isdigit() or len(account) >= 20:
@@ -167,3 +170,4 @@ class Database:
             'total_chats': total_chats,
             'user_stats': user_stats
         }
+
