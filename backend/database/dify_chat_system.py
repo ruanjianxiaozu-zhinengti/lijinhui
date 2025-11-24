@@ -80,8 +80,8 @@ class Database:
             raise
 
     def _init_admin(self):
-        admin_account = "666"
-        admin_password = "admin"
+        admin_account = "admin"
+        admin_password = "123456"
         self.cursor.execute('SELECT id FROM users WHERE account = %s', (admin_account,))
         if not self.cursor.fetchone():
             pwd_hash = hashlib.sha256(admin_password.encode()).hexdigest()
